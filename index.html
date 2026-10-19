@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Password Strength Checker</title>
+<style>
+  :root {
+    --bg: #f3f5f8;
+    --panel: #ffffff;
+    --ink: #1c2430;
+    --muted: #6a7585;
+    --line: #d5dbe4;
+    --weak: #d9534f;
+    --medium: #f0ad4e;
+    --strong: #5cb85c;
+    --accent: #2f6fdb;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161c;
+      --panel: #1b212a;
+      --ink: #e8ecf2;
+      --muted: #9aa5b5;
+      --line: #2e3744;
+      --accent: #6ea2ff;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px 16px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main {
+    width: 100%;
+    max-width: 460px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 28px;
+  }
+  h1 { margin: 0 0 4px; font-size: 1.4rem; }
+  .sub { margin: 0 0 20px; color: var(--muted); }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    font: 1.1rem ui-monospace, Consolas, monospace;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  input:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .show { display: flex; gap: 8px; align-items: center; margin: 10px 0 18px; color: var(--muted); font-size: .95rem; }
+  .bar { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--muted); transition: width .2s, background .2s; }
+  #rating { margin: 8px 0 16px; font-weight: 700; font-size: 1.1rem; color: var(--muted); }
+  h2 { margin: 0 0 6px; font-size: 1rem; }
+  #tips {
+    margin: 0 0 20px;
+    padding: 10px 12px 10px 28px;
+    min-height: 3.5em;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: .95rem;
+  }
+  #tips.none { list-style: none; padding-left: 12px; color: var(--muted); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    padding: 9px 14px;
+    font: inherit;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { filter: brightness(.95); }
+  #status { margin: 12px 0 0; min-height: 1.5em; color: var(--muted); font-size: .95rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Password Strength Checker</h1>
+  <p class="sub">Type a password to see how strong it is. Nothing leaves your browser.</p>
+
+  <input id="pw" type="password" autocomplete="off" spellcheck="false" aria-label="Password">
+  <label class="show"><input id="show" type="checkbox"> Show password</label>
+
+  <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0"><div id="fill"></div></div>
+  <div id="rating" aria-live="polite">Enter a password</div>
+
+  <h2>Tips</h2>
+  <ul id="tips" class="none"></ul>
+
+  <div class="row">
+    <button id="gen" class="primary">Generate strong password</button>
+    <button id="copy">Copy</button>
+    <button id="clear">Clear</button>
+  </div>
+  <p id="status" aria-live="polite"></p>
+</main>
+
+<script>
+// ===== Variables =====
+const MIN_LENGTH = 8;
+const GOOD_LENGTH = 12;
+const MAX_SCORE = 6;
+const SYMBOLS = "!\"£$%^&*()_+{}:@~<>?-=[];'#,./`¬¦\\|";
+const COLOURS = { Weak: "#d9534f", Medium: "#f0ad4e", Strong: "#5cb85c" };
+
+let commonPasswords = new Set();
+
+// Load the wordlist from the same folder as this page.
+fetch("toppasswords.txt")
+  .then(r => r.ok ? r.text() : "")
+  .then(text => {
+    commonPasswords = new Set(
+      text.split("\n").map(l => l.trim().toLowerCase()).filter(Boolean)
+    );
+    update();
+  })
+  .catch(() => {});
+
+// ===== Check functions =====
+const hasUppercase = p => /\p{Lu}/u.test(p);
+const hasLowercase = p => /\p{Ll}/u.test(p);
+const hasDigit = p => /\d/.test(p);
+const hasSymbol = p => [...p].some(c => SYMBOLS.includes(c));
+const isCommon = p => commonPasswords.has(p.toLowerCase());
+const hasRepeats = p => /(.)\1\1/s.test(p);
+
+// ===== Scoring =====
+function checkStrength(password) {
+  let score = 0;
+  const tips = [];
+
+  if (isCommon(password)) {
+    return [0, ["This is a common password. Pick something else."]];
+  }
+
+  if (password.length >= MIN_LENGTH) score += 2;
+  else tips.push(`Use at least ${MIN_LENGTH} characters.`);
+
+  if (password.length >= GOOD_LENGTH) score += 1;
+  else tips.push(`${GOOD_LENGTH}+ characters is even better.`);
+
+  if (hasUppercase(password) && hasLowercase(password)) score += 1;
+  else tips.push("Mix uppercase and lowercase letters.");
+
+  if (hasDigit(password)) score += 1;
+  else tips.push("Add a number.");
+
+  if (hasSymbol(password)) score += 1;
+  else tips.push("Add a symbol such as ! or @.");
+
+  if (hasRepeats(password)) {
+    score = Math.max(score - 1, 0);
+    tips.push("Avoid repeating the same character 3+ times.");
+  }
+  return [score, tips];
+}
+
+function getRating(score) {
+  if (score >= 6) return "Strong";
+  if (score >= 4) return "Medium";
+  return "Weak";
+}
+
+// ===== Generator (uses the browser's cryptographic RNG) =====
+function randomInt(max) {
+  const limit = Math.floor(0x100000000 / max) * max;
+  const buf = new Uint32Array(1);
+  do { crypto.getRandomValues(buf); } while (buf[0] >= limit);
+  return buf[0] % max;
+}
+const pick = chars => chars[randomInt(chars.length)];
+
+function generatePassword(length = 14) {
+  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lower = "abcdefghijklmnopqrstuvwxyz";
+  const digits = "0123456789";
+  const all = upper + lower + digits + SYMBOLS;
+  const chars = [pick(upper), pick(lower), pick(digits), pick(SYMBOLS)];
+  while (chars.length < length) chars.push(pick(all));
+  for (let i = chars.length - 1; i > 0; i--) {   // Fisher-Yates shuffle
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+// ===== UI =====
+const $ = id => document.getElementById(id);
+const pw = $("pw"), fill = $("fill"), rating = $("rating");
+const tipsEl = $("tips"), status = $("status"), bar = document.querySelector(".bar");
+
+function update() {
+  const password = pw.value;
+  tipsEl.innerHTML = "";
+
+  if (password === "") {
+    fill.style.width = "0";
+    bar.setAttribute("aria-valuenow", 0);
+    rating.textContent = "Enter a password";
+    rating.style.color = "var(--muted)";
+    tipsEl.className = "none";
+    return;
+  }
+
+  const [score, tips] = checkStrength(password);
+  const label = getRating(score);
+
+  fill.style.width = (score / MAX_SCORE * 100) + "%";
+  fill.style.background = COLOURS[label];
+  bar.setAttribute("aria-valuenow", score);
+  rating.textContent = `${label} (${score}/${MAX_SCORE})`;
+  rating.style.color = COLOURS[label];
+
+  if (tips.length === 0) {
+    tipsEl.className = "none";
+    tipsEl.innerHTML = "<li>No weaknesses found. Nice work!</li>";
+  } else {
+    tipsEl.className = "";
+    tips.forEach(t => {
+      const li = document.createElement("li");
+      li.textContent = t;
+      tipsEl.appendChild(li);
+    });
+  }
+}
+
+pw.addEventListener("input", () => { status.textContent = ""; update(); });
+
+$("show").addEventListener("change", e => {
+  pw.type = e.target.checked ? "text" : "password";
+});
+
+$("gen").addEventListener("click", () => {
+  pw.value = generatePassword();
+  $("show").checked = true;
+  pw.type = "text";
+  update();
+  status.textContent = "Generated a new password.";
+});
+
+$("copy").addEventListener("click", async () => {
+  if (pw.value === "") { status.textContent = "Nothing to copy."; return; }
+  try {
+    await navigator.clipboard.writeText(pw.value);
+    status.textContent = "Copied to clipboard.";
+  } catch {
+    pw.select();
+    status.textContent = "Couldn't copy automatically. Press Ctrl+C.";
+  }
+});
+
+$("clear").addEventListener("click", () => {
+  pw.value = "";
+  status.textContent = "";
+  update();
+  pw.focus();
+});
+
+update();
+</script>
+</body>
+</html>
