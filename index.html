@@ -168,6 +168,9 @@ function checkStrength(password) {
 
   if (hasRepeats(password)) {
     score = Math.max(score - 1, 0);
+	if (score == 5) {
+	score = 6;
+	}
     tips.push("Avoid repeating the same character 3+ times.");
   }
   return [score, tips];
